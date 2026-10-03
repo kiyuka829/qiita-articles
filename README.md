@@ -18,3 +18,10 @@ npx qiita preview
 ## 公開
 
 `main` ブランチへの push をトリガーに、GitHub Actions が Qiita へ記事が反映される。
+
+## License
+
+- Articles, documentation, and original images: [CC BY 4.0](./LICENSE-CC-BY-4.0)
+- Source code, code snippets, and configuration files: [MIT License](./LICENSE-MIT)
+
+Unless otherwise noted, third-party materials are subject to their respective licenses.
