@@ -1,5 +1,5 @@
 ---
-title: 重い非同期処理を止めないために MessageChannel で yield する
+title: 重いループ処理でUIを止めないために MessageChannel で yield する
 tags:
   - JavaScript
   - TypeScript
@@ -21,13 +21,13 @@ JavaScriptで他の処理を邪魔しないように重いループ処理を実�
 
 できました！
 
-```js
+```ts
 // 重い処理のループ
 async function processItems(items: Item[]) {
-  for (let i = 0; i < 100000; i++) {
-    heavyWork();
+  for (const [i, item] of items.entries()) {
+    heavyWork(item);
 
-    if (i % 100 === 0) {
+    if ((i + 1) % 100 === 0) {
       await yieldToEvents();
     }
   }
@@ -38,8 +38,7 @@ const yieldToEvents = (() => {
   const { port1, port2 } = new MessageChannel();
   const callbacks: (() => void)[] = [];
   port1.onmessage = () => callbacks.shift()?.();
-  for (const port of [port1, port2])
-    (port as MessagePort & { unref?: () => void }).unref?.();
+
   return () =>
     new Promise<void>((resolve) => {
       callbacks.push(resolve);
@@ -59,16 +58,15 @@ const yieldToEvents = (() => {
 最初は単に非同期で呼び出ししてただけだったんですよね。
 非同期呼び出しなんだからこれでメインの処理をブロックすることはないよね、と思っていました。
 
-```js
+```ts
 async function processItems(items: Item[]) {
   for (const item of items) {
-    heavyWork();
+    heavyWork(item);
   }
 }
 ```
 
 でもそんなことはないようで、なんで？と思っていたら、JavaScriptはあくまでシングルスレッドで動作しているので並列で実行してくれるわけではないようです。
-asyncはWeb APIの呼び出しなどの外部の処理では処理を止めることはないけど、という話のようです。
 
 このあたりはイベントループの話になるので、以下のような解説記事を読むのがおすすめです。（説明できるほど理解できていないとも言う。）
 
@@ -77,17 +75,15 @@ asyncはWeb APIの呼び出しなどの外部の処理では処理を止める�
 
 ## `setTimeout` を使うぜ（うまくいく場合もあるけど...）
 
-そこで最初は、`setTimeout` で一瞬処理を中断してメインの処理に戻してやればいいんだ、と思いって以下のようにしました。
+そこで最初は、`setTimeout` で一瞬処理を中断してメインの処理に戻してやればいいんだ、と思って以下のようにしました。
 
-```js
+```ts
 async function processItems(items: Item[]) {
-  let i = 0;
-  for (const item of items) {
+  for (const [i, item] of items.entries()) {
     heavyWork(item);
 
-    if (i++ % 100 === 0) {
-
-      // 待ち時間0秒（？）でメインの処理に戻すことで分割して処理をする
+    if ((i + 1) % 100 === 0) {
+      // 待ち時間0秒（？）でメインの処理に戻すことで分割して処理をする？
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
@@ -95,23 +91,22 @@ async function processItems(items: Item[]) {
 ```
 
 しかしこうしたらメインの処理には戻ったものの、`processItems` の処理がいつまで経っても戻ってきませんでした。
-なんでー？と思いつつ調べていたら、MDNのドキュメントの [setTimeout() method](https://developer.mozilla.org/ja/docs/Web/API/Window/setTimeout) を見ると `delay=0` を指定しても、処理が積み重なった場合、実際は4ms時間がかかるらしいです。
+なんでー？と思いつつ調べていたら、MDNのドキュメントの [setTimeout() method](https://developer.mozilla.org/ja/docs/Web/API/Window/setTimeout) を見ると `delay=0` を指定しても、処理が積み重なった場合は最小4msの時間がかかるらしいです。
 
 そうすると `setTimeout` の呼び出し回数 x 4ms がかかることになります。重い処理が数回実行されるケースでは問題なさそうですが、純粋にループ数が多い場合、この4msの積み重ねによって処理が終わらない、という状況になっていたようでした。
 
-実際、返ってこなかった処理ではループ回数が100万回近くになってたので、それだよそれ！ってなりました。
+実際、返ってこなかった処理ではループ回数が1000万回近くになってたので、それだよそれ！ってなりました。
 
-## MessageChannel で処理を中断する
+## MessageChannel で処理を分割する
 
 そういうわけで `MessageChannel` を使用します。
 
-```js: 最初のコードの再掲
+```ts:最初のコードの再掲
 async function processItems(items: Item[]) {
-  let i = 0;
-  for (const item of items) {
+  for (const [i, item] of items.entries()) {
     heavyWork(item);
 
-    if (i++ % 100 === 0) {
+    if ((i + 1) % 100 === 0) {
       await yieldToEvents();
     }
   }
@@ -122,10 +117,6 @@ const yieldToEvents = (() => {
   const callbacks: (() => void)[] = [];
   port1.onmessage = () => callbacks.shift()?.();
 
-  // Node.js用
-  for (const port of [port1, port2])
-    (port as MessagePort & { unref?: () => void }).unref?.();
-
   return () =>
     new Promise<void>((resolve) => {
       callbacks.push(resolve);
@@ -134,14 +125,11 @@ const yieldToEvents = (() => {
 })();
 ```
 
-正直これでなんでうまくいくか正しくは理解はできていないのですが、やっていることは
+正直これでなんでうまくいくか正しく理解はできていないのですが、やっていることは
 
-メッセージを受信する処理を別のイベントとして実行させることで、メインの処理（イベントループ）に戻している。
+> メッセージを受信する処理を別のイベントとして実行させることで、現在実行している処理をいったん終了し、続きを別のタスクとして実行することで、その間にブラウザがほかの処理を行える機会を作っている
 
-ということをしているらしいです。まあこのコードだけで言えば雑に言うと待ち時間ゼロで `setTimeout` をしている、くらいに思ってもらえば。
-詳しく知りたい人は`MessageChannel` について調べて？
-
-- [JavaScript のイベントループ：microtask と macrotask](https://ja.javascript.info/event-loop)
+ということをしているらしいです。まあこのコードだけで言えば雑に言うと待ち時間なしで `setTimeout` をしている、くらいに思ってもらえば。（というよりそれくらいの理解しかしていない。）
 
 ## scheduler.yield() について
 
@@ -174,6 +162,7 @@ await scheduler.yield();
 
 - [イベントループを裏側から腹落ちさせる：JavaScriptエンジンとブラウザの役割、TaskとMicrotaskの正体](https://zenn.dev/loglass/articles/8b0c06db7c9005)
 - [JavaScriptのイベントループ](https://qiita.com/mattsu_mocha/items/18a39ec02e0e1ebf8e12)
+- [JavaScript のイベントループ：microtask と macrotask](https://ja.javascript.info/event-loop)
 
 MDN
 
