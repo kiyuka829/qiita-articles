@@ -52,7 +52,7 @@ const yieldToEvents = (() => {
 
 解説というより、結論にたどり着くまでの流れ。
 
-## async使えばええやろ（無理）
+## `async` 使えばええやろ（無理）
 
 最初は単に非同期で呼び出ししてただけだったんですよね。非同期呼び出しなんだからこれでメインの処理をブロックすることはないよね、と思っていました。
 
@@ -89,7 +89,7 @@ async function processItems(items: Item[]) {
 ```
 
 しかしこうしたらメインの処理には戻ったものの、`processItems` の処理がいつまで経っても戻ってきませんでした。
-なんでー？と思いつつ調べていたら、MDNのドキュメントの [setTimeout() method](https://developer.mozilla.org/ja/docs/Web/API/Window/setTimeout) を見ると `delay=0` を指定しても、処理が積み重なった場合は最小4msの時間がかかるらしいです。
+なんでー？と思いつつMDNのドキュメントの [setTimeout() method](https://developer.mozilla.org/ja/docs/Web/API/Window/setTimeout) を見ると `delay=0` を指定しても、処理が積み重なった場合は最小4msの時間がかかるらしいです。
 
 そうすると `setTimeout` の呼び出し回数 x 4ms がかかることになります。重い処理が数回実行されるケースでは問題なさそうですが、純粋にループ数が多い場合、この4msの積み重ねによって処理が終わらない、という状況になっていたようでした。
 
@@ -129,7 +129,7 @@ const yieldToEvents = (() => {
 
 ということをしているらしいです。まあこのコードだけで言えば雑に言うと待ち時間なしで `setTimeout` をしている、くらいに思ってもらえば。
 
-## scheduler.yield() について
+## `scheduler.yield()` について
 
 この記事を書いている途中で知ったのですが [`scheduler.yield()`](https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/yield) というAPIもあるようです。
 
@@ -146,14 +146,14 @@ await scheduler.yield();
 
 ちなみに理解できているかと言われるとそんなこともない。イベントループ難しいね？
 
-（件数分割ではなく、`performance.now()` で経過時間を見て分割していれば、`setTimeout`でも問題なかったのでは？というのは秘密だよ。）
+（件数分割ではなく、`performance.now()` で経過時間を見て分割していれば、`setTimeout` でも問題なかったのでは？というのは秘密だよ。）
 
 # 参考
 
 重い処理をどうにかしよう系の記事
 
 - [長いタスクを最適化する（web.dev）](https://web.dev/articles/optimize-long-tasks?hl=ja)
-  - 今回の内容とほぼ同じ内容を対象としている記事。この記事を書いてたら見つかった（Codexが見つけた）
+  - 今回の内容とほぼ同じ内容を対象としている記事。この記事を書いてたら見つかった（Codexが見つけた）。実際のコードはこっちを参考にしたほうがいいかもね？
 - [setTimeout(…, 0) って何の意味があるの？](https://qiita.com/Yudai-HARA/items/fc5e755e17cedc1ed518)
 - [フロントエンドでCPU負荷の高い計算を描画を止めずに実行する](https://zenn.dev/algoartis/articles/async_computation)
 - [長いタスクを分割するscheduler.yieldという提案](https://zenn.dev/cybozu_frontend/articles/scheduler-yield)
