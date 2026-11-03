@@ -158,6 +158,68 @@ lazy_offsets = {
 
 このように `lazy_offsets` によって、必要なときにファイルの指定の位置から属性を読み取りに行くことができます。
 
+## 属性の保持
+
+属性にアクセスしたときに、その情報を実際に読み取って解析し、内部にデータを保持します。
+このとき単一の属性へのアクセスだとしても対象のすべての属性を解析して保持する形を取ります。
+
+イメージ的には、以下のように `storage` にデータが格納されるような形です。
+
+```py
+"""
+#389= IFCSITE('0KMpiAlnb52RgQuM1CwVfd',#12,'Gelaende','Ebenes Gelaende','LandUse',#115,#383,$,.ELEMENT.,(49,6,1,566000),(8,26,11,540400),110.,$,$);
+"""
+
+# 読み込んだ時点のデータ
+inst389 = InstanceData(id=389, type="IfcSite", storage=None)
+
+# どれかの属性にアクセスすると以下のようなデータが作られる
+inst389.storage = [
+  '0KMpiAlnb52RgQuM1CwVfd',
+  inst12,
+  'Gelaende',
+  'Ebenes Gelaende',
+  'LandUse',
+  inst115,
+  inst383,
+  None,
+  "ELEMENT",
+  (49,6,1,566000),
+  (8,26,11,540400),
+  110.,
+  None,
+  None
+]
+```
+
+一度ファイルから読み取って解析したらメモリ上に保持することで、同じデータに対して何度も解析処理をしないようにしています。
+
+# Appendix
+
+## ページキャッシュ
+
+ファイルは64 KiBごとにページに分けて読み込み、最大64ページを保持します。各ページのデータはファイルから読み込んだバイト列です。ページ番号からデータを検索する構造と、利用順を管理するリストを持っています。
+
+```py
+# ページ番号 → ページのデータと、利用順リスト上の位置
+pages = {
+    0: {
+        "data": b"ISO-10303-21;\r\nHEADER;...",
+        "lru_position": ...,  # lru の中のページ0の位置
+    },
+    1: {
+        "data": b"...",
+        "lru_position": ...,  # lru の中のページ1の位置
+    },
+}
+
+# ページ番号を利用順に並べたリスト
+# 最近使ったページが先頭
+lru = [1, 0]
+```
+
+<https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/file_reader.h#L328-L369>
+
 <!--
 - [索引などのデータ構造（storage.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/storage.h)
 - [属性が空の内部オブジェクトの作成（instance_data.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/instance_data.h#L539-L568)
