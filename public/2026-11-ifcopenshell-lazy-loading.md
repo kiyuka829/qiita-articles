@@ -71,10 +71,97 @@ name = wall.Name
 
 ここから真面目に解説する。図とかいっぱい入れたい。
 
-## `open(lazy=True)` では検索用データだけ作成している
+## 読み込み処理
 
-`open(lazy=True)` での読み込みでは、`.by_id`, `.by_type`, `.by_guid`, `.get_inverse` での検索処理に必要な情報のみの解析している。
-つまりは、`#123` などのIDのデータがファイル内のどこにあるのか、`IFCWALL` などの type に対してのIDの一覧、などの検索に必要なデータを作っている。
+`open(lazy=True)` では、ファイルを先頭から順に読み、`.by_id()`、`.by_type()`、`.by_guid()`、`.get_inverse()` などの検索に必要な情報を集めている。
+
+まず、`#123=IFCWALL(...)` という記述を見つけたら、IDが `123`、型が `IfcWall` のインスタンスがあることを記録する。
+そのために、各インスタンスに対応する内部オブジェクトを作る。ただし、この時点では属性値を格納する領域は空のまま。
+
+Pythonっぽく書くと、イメージはこんな感じ。`Instance` は内部オブジェクトを表すための架空のクラス。
+
+```py
+inst123 = InstanceData(id=123, type="IfcWall", attributes=None)
+inst456 = InstanceData(id=456, type="IfcWall", attributes=None)
+inst789 = InstanceData(id=789, type="IfcSlab", attributes=None)
+```
+
+次に、これらをIDや型などから探せるように、検索用のデータへ登録していく。こうした検索用のデータを索引（インデックス）と呼ぶ。
+
+### ID・GlobalId・型の索引
+
+IDから探すためには、IDと内部オブジェクトを対応させる。
+GlobalIdから探す場合も同じで、GlobalIdと内部オブジェクトを対応させる。
+型については同じ型のインスタンスが複数あるので、一覧にしておく。
+
+```py
+# ID → インスタンス
+id_index = {
+    123: inst123,
+    456: inst456,
+    789: inst789,
+}
+
+# GlobalId → インスタンス（GUIDの値は説明用に省略）
+guid_index = {
+    "guid123": inst123,
+    "guid456": inst456,
+    "guid789": inst789,
+}
+
+# 型 → インスタンスの一覧
+type_index = {
+    "IfcWall": [inst123, inst456],
+    "IfcSlab": [inst789],
+}
+```
+
+これで `by_id(123)` なら `inst123`、`by_type("IfcWall")` なら `[inst123, inst456]` を取得できる。
+
+### 逆参照の索引
+
+属性値の解析を後回しにしているとはいえ、`(...)` の中を何も見ずに飛ばしているわけではない。
+GlobalIdの取得に加えて、属性内に現れる `#5` などの参照も拾っている。
+
+例えば、`#123`、`#456`、`#789` がそれぞれ属性内で `#5` を参照していたら、こんな対応を記録する。
+
+```py
+# 参照先のID → それを参照しているインスタンスのIDの一覧
+inverse_index = {
+    5: [123, 456, 789],
+}
+```
+
+これがあると、`#5` に対する `get_inverse()` で、`#5` を参照しているインスタンスを探せる。
+実際には、参照元の型や何番目の属性から参照されているかも記録しているけれど、ここでは省略する。
+
+### 後で属性を読むための位置情報
+
+もう一つ、後から属性を解析するために、各インスタンスの属性がファイル内のどこから始まるのかも記録しておく。
+
+```py
+# ID → ファイル内の属性開始位置（ファイル先頭からのバイト数）
+# 数値は説明用の例
+lazy_offsets = {
+    123: 1000,
+    456: 1200,
+    789: 1400,
+}
+```
+
+この位置を覚えておけば、後で属性が必要になったときに、ファイル全体を探し直さずに該当箇所へ戻れる。
+
+ここまでのPython風のデータは、対応関係を示すために簡略化したもの。実際の処理はC++で実装されていて、変数名やデータの型も異なる。
+例えば `lazy_offsets_` は辞書ではなく、IDと位置の組を持つ配列で、初期走査の最後にID順にソートしている。
+
+実際の定義や処理は、以下を参照。
+
+- [索引などのデータ構造（storage.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/storage.h)
+- [属性が空の内部オブジェクトの作成（instance_data.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/instance_data.h#L539-L568)
+- [初期走査と索引の構築（parse.cpp）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/parse.cpp#L2776-L2886)
+
+つまり、ファイルを開いた時点でメモリ上にあるのは、検索に必要な情報と、属性値がまだ入っていない各インスタンスの入れ物。
+全インスタンスの属性値を解析して格納するところまでは、まだ行っていないということ。
 
 # メモ
 
