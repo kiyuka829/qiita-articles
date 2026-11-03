@@ -269,3 +269,52 @@ ID、Type、逆参照、GUID。
       → 解析結果が storage_ に保持される
   → 属性値をSTEPテキストとして出力する
 ````
+
+## ページキャッシュ
+
+そうです。**ファイルを一定サイズに区切り、その一部分を元のバイト列のままメモリに置くキャッシュ**です。
+
+保持しているデータ自体はシンプルで、1ページが次の構造です。
+
+```cpp
+struct file_reader_page {
+    std::vector<char> data;
+};
+```
+
+この `data` に、ファイルから読み込んだ `#123=IFCWALL(...);` などの生のバイト列が入ります。解析済みの属性やインスタンスのオブジェクトではありません。[ページの定義](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/file_reader.h#L60-L62)
+
+ページの区切りは、インスタンスの区切りとは関係なく、ファイル先頭から一定間隔です。確認中のlazy実装では1ページ64 KiBなので、こうなります。
+
+| ページ番号 | ファイル内のバイト位置 |
+| --- | --- |
+| 0 | 0〜65,535 |
+| 1 | 65,536〜131,071 |
+| 2 | 131,072〜196,607 |
+
+一つのインスタンスがページをまたぐ場合もあります。
+
+ページ全体の管理には、**ページ番号からデータを探すハッシュ表**と、**使った順番を管理するリスト**を組み合わせています。
+
+```text
+map_：ページ番号 → ページデータ ＋ リスト上の位置
+  2 → 生のバイト列 [...]
+  7 → 生のバイト列 [...]
+  3 → 生のバイト列 [...]
+
+lru_：ページの利用順
+  最近使った側 → [3, 7, 2] → 長く使っていない側
+```
+
+実際の型は `std::unordered_map<size_t, entry>` と `std::list<size_t>` です。各エントリにはリスト上の位置も持たせているので、利用順の更新時にリストを探し回る必要がありません。[管理構造の定義](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/file_reader.h#L328-L369)
+
+例えばファイルの100,000バイト目を読む場合は、
+
+1. `100000 ÷ 65536` でページ番号 **1** を求める。
+2. キャッシュにページ1があれば、それを使う。
+3. なければ、ファイルの65,536バイト目から1ページ分を読み込む。
+4. ページ内の `100000 % 65536 = 34464` 番目のバイトを返す。
+
+という処理になります。キャッシュが上限に達していれば、長く使っていないページを外して入れ替えます。[バイトの取得](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/file_reader.cpp#L112-L122)、[ページの読み込み・入れ替え](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/file_reader.cpp#L166-L211)
+
+lazy読み込みではこれを64ページ保持する設定なので、ページのデータ部分は最大4 MiBです。ここから読んだ内容を解析して `storage_` に格納する処理は、また別にあります。[lazy用の設定](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/parse.cpp#L2728-L2733)
