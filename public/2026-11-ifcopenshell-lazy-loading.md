@@ -71,97 +71,102 @@ name = wall.Name
 
 ここから真面目に解説する。図とかいっぱい入れたい。
 
-## 読み込み処理
+## 読み込み時に保持するデータ
 
-`open(lazy=True)` では、ファイルを先頭から順に読み、`.by_id()`、`.by_type()`、`.by_guid()`、`.get_inverse()` などの検索に必要な情報を集めている。
+`open(lazy=True)` では、ファイルを先頭から順に読み込み、検索などに必要なデータのみを保持する形を取る。
 
-まず、`#123=IFCWALL(...)` という記述を見つけたら、IDが `123`、型が `IfcWall` のインスタンスがあることを記録する。
-そのために、各インスタンスに対応する内部オブジェクトを作る。ただし、この時点では属性値を格納する領域は空のまま。
+ここでは、`AC20-FZK-Haus.ifc` から以下の3件を抜粋して、どのようなデータが作られるかを示します。
 
-Pythonっぽく書くと、イメージはこんな感じ。`Instance` は内部オブジェクトを表すための架空のクラス。
-
-```py
-inst123 = InstanceData(id=123, type="IfcWall", attributes=None)
-inst456 = InstanceData(id=456, type="IfcWall", attributes=None)
-inst789 = InstanceData(id=789, type="IfcSlab", attributes=None)
+```text
+#389= IFCSITE('0KMpiAlnb52RgQuM1CwVfd',#12,'Gelaende','Ebenes Gelaende','LandUse',#115,#383,$,.ELEMENT.,(49,6,1,566000),(8,26,11,540400),110.,$,$);
+#434= IFCBUILDING('2hQBAVPOr5VxhS3Jl0O47h',#12,'FZK-Haus','FZK-Haus create by KHH / IAI / FZK','Wohnhaus',#432,$,$,.ELEMENT.,$,$,$);
+#436= IFCRELAGGREGATES('0FWMHXglS7fAS5ox0icROM',#12,$,$,#389,(#434));
 ```
 
-次に、これらをIDや型などから探せるように、検索用のデータへ登録していく。こうした検索用のデータを索引（インデックス）と呼ぶ。
+なお、以下はイメージを掴むためのPythonでの疑似的なデータ構造であり、実際のC＋＋でのデータではない。
 
-### ID・GlobalId・型の索引
+### インスタンスの内部オブジェクト
 
-IDから探すためには、IDと内部オブジェクトを対応させる。
-GlobalIdから探す場合も同じで、GlobalIdと内部オブジェクトを対応させる。
-型については同じ型のインスタンスが複数あるので、一覧にしておく。
+各行のIDと型を読み取り、対応する内部オブジェクトを作成します。属性値は、この時点では空です。
+
+```py
+inst389 = InstanceData(id=389, type="IfcSite", storage=None)
+inst434 = InstanceData(id=434, type="IfcBuilding", storage=None)
+inst436 = InstanceData(id=436, type="IfcRelAggregates", storage=None)
+```
+
+### 検索用のデータ
+
+ID, Type, GlobalId でインスタンスを検索できるようにするための索引用のデータも初期読込み時に作成して保持します。
+「`(...)` 内の属性情報を完全には解析しない」と記載していましたが、実際はGlobalIdと逆参照の索引データを作成するために、それらの情報だけ解析しています。
+
+以下は保持されるデータのイメージ。
 
 ```py
 # ID → インスタンス
-id_index = {
-    123: inst123,
-    456: inst456,
-    789: inst789,
+by_id = {
+    389: inst389,
+    434: inst434,
+    436: inst436,
 }
 
-# GlobalId → インスタンス（GUIDの値は説明用に省略）
-guid_index = {
-    "guid123": inst123,
-    "guid456": inst456,
-    "guid789": inst789,
+# GlobalId → インスタンス
+by_guid = {
+    "0KMpiAlnb52RgQuM1CwVfd": inst389,
+    "2hQBAVPOr5VxhS3Jl0O47h": inst434,
+    "0FWMHXglS7fAS5ox0icROM": inst436,
 }
 
 # 型 → インスタンスの一覧
-type_index = {
-    "IfcWall": [inst123, inst456],
-    "IfcSlab": [inst789],
+by_type = {
+    "IfcSite": [inst389],
+    "IfcBuilding": [inst434],
+    "IfcRelAggregates": [inst436],
 }
+
+# 逆参照のソート済みのレコード一覧（二分探索で検索される）
+# (参照先ID, 参照元ID, 参照元の型, 属性位置)
+by_ref = [
+    (12,  389, "IfcSite",          1),
+    (12,  434, "IfcBuilding",      1),
+    (12,  436, "IfcRelAggregates", 1),
+    (115, 389, "IfcSite",          5),
+    (383, 389, "IfcSite",          6),
+    (389, 436, "IfcRelAggregates", 4),
+    (432, 434, "IfcBuilding",      5),
+    (434, 436, "IfcRelAggregates", 5),
+]
 ```
 
-これで `by_id(123)` なら `inst123`、`by_type("IfcWall")` なら `[inst123, inst456]` を取得できる。
+### 属性を読むための位置情報
 
-### 逆参照の索引
-
-属性値の解析を後回しにしているとはいえ、`(...)` の中を何も見ずに飛ばしているわけではない。
-GlobalIdの取得に加えて、属性内に現れる `#5` などの参照も拾っている。
-
-例えば、`#123`、`#456`、`#789` がそれぞれ属性内で `#5` を参照していたら、こんな対応を記録する。
-
-```py
-# 参照先のID → それを参照しているインスタンスのIDの一覧
-inverse_index = {
-    5: [123, 456, 789],
-}
-```
-
-これがあると、`#5` に対する `get_inverse()` で、`#5` を参照しているインスタンスを探せる。
-実際には、参照元の型や何番目の属性から参照されているかも記録しているけれど、ここでは省略する。
-
-### 後で属性を読むための位置情報
-
-もう一つ、後から属性を解析するために、各インスタンスの属性がファイル内のどこから始まるのかも記録しておく。
+`(...)` 内の属性情報は初期読込み時にメモリ内部で保持していません。
+そのため、属性情報を読むためにファイル上のどの位置に各インスタンスの情報があるのかを保持します。
+位置は、型名の直後にある `(` の次のバイトです。
 
 ```py
 # ID → ファイル内の属性開始位置（ファイル先頭からのバイト数）
-# 数値は説明用の例
 lazy_offsets = {
-    123: 1000,
-    456: 1200,
-    789: 1400,
+    389: 10899,
+    434: 11931,
+    436: 12070,
 }
+
+"""
+#436= IFCRELAGGREGATES('0FWMHXglS7fAS5ox0icROM',#12,$,$,#389,(#434));
+                       ↑ ここがファイルの 12070 byte の位置
+"""
 ```
 
-この位置を覚えておけば、後で属性が必要になったときに、ファイル全体を探し直さずに該当箇所へ戻れる。
+このデータによって、必要なときにファイルの指定の位置から属性を読み取りに行くことができます。
 
-ここまでのPython風のデータは、対応関係を示すために簡略化したもの。実際の処理はC++で実装されていて、変数名やデータの型も異なる。
-例えば `lazy_offsets_` は辞書ではなく、IDと位置の組を持つ配列で、初期走査の最後にID順にソートしている。
-
-実際の定義や処理は、以下を参照。
-
+<!--
 - [索引などのデータ構造（storage.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/storage.h)
 - [属性が空の内部オブジェクトの作成（instance_data.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/instance_data.h#L539-L568)
 - [初期走査と索引の構築（parse.cpp）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/parse.cpp#L2776-L2886)
-
-つまり、ファイルを開いた時点でメモリ上にあるのは、検索に必要な情報と、属性値がまだ入っていない各インスタンスの入れ物。
-全インスタンスの属性値を解析して格納するところまでは、まだ行っていないということ。
+- [id, type, guid](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/storage.h#L666)
+- [ref](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/storage.h#L150)
+ -->
 
 # メモ
 
