@@ -267,7 +267,10 @@ inst389.storage = [
 
 ## ページキャッシュ
 
-ファイルは64 KiBごとにページに分けて読み込み、最大64ページを保持します。各ページのデータはファイルから読み込んだバイト列です。ページ番号からデータを検索する構造と、利用順を管理するリストを持っています。
+属性を読むたびに毎回ファイルへアクセスすると、比較的重い処理であるファイルI/Oが増える。そのため、一度読み込んだデータの一部をメモリ上にキャッシュしている。
+ファイルは64 KiBごとのページに分けて読み込み、最大64ページを保持する形。必要な位置のページがキャッシュにあればそれを使い、なければファイルから読み込む。
+
+データ構造的には以下のようなイメージで保持している。
 
 ```py
 # ページ番号 → ページのデータと、利用順リスト上の位置
@@ -287,7 +290,7 @@ pages = {
 lru = [1, 0]
 ```
 
-<https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/file_reader.h#L328-L369>
+[C++の該当コード](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/file_reader.h#L328-L369)
 
 <!--
 - [索引などのデータ構造（storage.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/a298d3489419a06636c5f4b423b2fc9c1ceb7c65/src/ifcparse/storage.h)
