@@ -215,6 +215,7 @@ inst389.storage = [
 ここでは64 bit環境を想定し、初期読み込み時に保持する主要なデータ構造のメモリ使用量をざっくり計算してみます。各データのサイズは仮定に基づくもので、環境やビルド構成によって変わります。
 
 実際のIfcOpenShell上の `instance_data` では以下の情報を保持しています。
+参考：[instance_data の定義（instance_data.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/instance_data.h#L539-L568)
 
 | メンバー | 内容 | 仮定するサイズ |
 | --- | --- | --- |
@@ -223,8 +224,6 @@ inst389.storage = [
 | `identity_` | 内部管理用の識別番号 | 4バイト |
 | `id_` | `#1234`などのインスタンスID | 4バイト |
 | `storage_` | 解析済み属性の格納領域 | 16バイト |
-
-参考：[instance_data の定義（instance_data.h）](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/instance_data.h#L539-L568)
 
 この仮定では、属性情報を解析していない状態でも、1インスタンスあたり合計40バイトを使用する計算です。また、検索用のデータ4種と属性遅延読み込み用のデータも読み込み時に保持します。これらのサイズも以下のように仮定します。
 
@@ -235,7 +234,6 @@ inst389.storage = [
 - `lazy_offsets_`: 16バイト / 1インスタンス
 
 これらに加えて、共有ポインタの参照数などを管理する領域を1インスタンスあたり24バイトと仮定します。また、逆参照の領域については、初期容量として「ファイルサイズ / 32」件分が予約されるため、それも考慮します。
-
 参考：[逆参照の初期容量の予約（parse.cpp）](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/parse.cpp#L2808)
 
 以上から、初期読み込み時に保持する主要なデータ構造のメモリ使用量を、以下のように概算します。
@@ -263,6 +261,8 @@ inst389.storage = [
 | 392.86 MB | 5,399,942 | 8,075,801 | 1,076,305 | 993.80 | 1,061.31 |
 
 概算 + α くらいのメモリ使用量になっており、おおよそ想定していた通りの結果なのかなと思います。
+
+参考：[計測スクリプト・実行環境](https://github.com/kiyuka829/qiita-articles/blob/33c2fdda1b7a2951942af665d666754eeea6ac9e/scripts/ifcopenshell-lazy-memory/README.md)
 
 # まとめ
 
