@@ -18,7 +18,7 @@ RSSとfootprintはIfcOpenShellのimport後、openの直前・直後に取得し�
 
 ## 計測結果
 
-2026-11-04、Apple M5・16 GB、macOS 26.6.2、Python 3.12.13、IfcOpenShell 0.9.0で計測しました。各ファイルは別プロセスで1回ずつ開き、すべて `lazy_loading()` が `True` であることを確認しています。
+Apple M5・16 GB、macOS 26.6.2、Python 3.12.13、IfcOpenShell 0.9.0で計測しました。各ファイルは別プロセスで1回ずつ開き、すべて `lazy_loading()` が `True` であることを確認しています。
 
 | ファイル | インスタンス数 | 参照数 | IfcRoot数 | 概算 MB | footprint増加 MB | RSS増加 MB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -38,10 +38,10 @@ RSSとfootprintはIfcOpenShellのimport後、openの直前・直後に取得し�
 
 | 計測時のファイル名 | 入手元 | サイズ（バイト） | SHA-256 |
 | --- | --- | ---: | --- |
-| `AC20-FZK-Haus.ifc` | [KIT IFC Examples](https://www.ifcwiki.org/images/e/e3/AC20-FZK-Haus.ifc) | 2,570,803 | `70cc8ff245fc0894201d96496c031005a5cbd7a96b22d8a1b87c5a883fb77994` |
+| `AC20-FZK-Haus.ifc` | [KIT IFC Examples](https://www.ifcwiki.org/index.php?title=KIT_IFC_Examples) | 2,570,803 | `70cc8ff245fc0894201d96496c031005a5cbd7a96b22d8a1b87c5a883fb77994` |
 | `kitchen.ifc` | Sixty5設計モデルの `O-S1-BWK-BIM kitchens total - BIM keukens totaal.ifc` | 49,670,229 | `1905b992071729d1c780b18f6103e4d1d08307a4707d5f33a4413216f36776ac` |
 | `electrical.ifc` | Sixty5設計モデルの `O-S1-INS-E Installatie.ifc` | 97,058,912 | `adb8d5eda2c706a1fded2a00bd38d845e35f513e2f6ba048fc6228274dfb3986` |
 | `plumbing.ifc` | Sixty5設計モデルの `O-S1-INS-Plumbing - Sanitair.ifc` | 222,099,255 | `15382b06d0a63464b95ba451ce7d5fa981bf6c236ebe3f4f62bb9d2b9abfd821` |
-| `T1_UpTown_ArchiCAD.ifc` | [GeoBIM Benchmark 2019 Task 1](https://zenodo.org/api/records/3964368/files/benchmarkTask1_exportedIFC.zip/container/benchmarkTask1_exportedIFC/T1_UpTown_ArchiCAD.ifc) | 392,855,677 | `d96624787b62b28a7a824f9bb6611082ef9bbf15d944bccc6e0ee3850771cfca` |
+| `T1_UpTown_ArchiCAD.ifc` | [GeoBIM Benchmark 2019 Task 1](https://zenodo.org/records/3964368) | 392,855,677 | `d96624787b62b28a7a824f9bb6611082ef9bbf15d944bccc6e0ee3850771cfca` |
 
 Sixty5の3ファイルは [SDK - S1 の案内](https://github.com/buildingsmart-community/Community-Sample-Test-Files/tree/7ddf57a201f88a0c213d5322b02ed15e94a60a40/IFC%202.3.0.1%20%28IFC%202x3%29/SDK%20-%20S1) にある設計モデルのアーカイブから取得できます。`kitchen.ifc` などはローカルで付けた名前です。
