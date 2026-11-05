@@ -49,6 +49,18 @@ open前後のメモリ増加量を取得した後、インスタンス数・参�
 
 ファイルサイズはバイト単位、割り算は整数除算です。
 
+## 使用したIFCファイル
+
+| 計測時のファイル名 | 入手元・元のファイル名 |
+| --- | --- |
+| `AC20-FZK-Haus.ifc` | [KIT IFC Examples](https://www.ifcwiki.org/index.php?title=KIT_IFC_Examples) |
+| `kitchen.ifc` | Sixty5設計モデルの `O-S1-BWK-BIM kitchens total - BIM keukens totaal.ifc` |
+| `electrical.ifc` | Sixty5設計モデルの `O-S1-INS-E Installatie.ifc` |
+| `plumbing.ifc` | Sixty5設計モデルの `O-S1-INS-Plumbing - Sanitair.ifc` |
+| `T1_UpTown_ArchiCAD.ifc` | [GeoBIM Benchmark 2019 Task 1](https://zenodo.org/records/3964368) |
+
+Sixty5の3ファイルは [SDK - S1の案内](https://github.com/buildingsmart-community/Community-Sample-Test-Files/tree/HEAD/IFC%202.3.0.1%20%28IFC%202x3%29/SDK%20-%20S1) にある設計モデルのアーカイブから取得できます。`kitchen.ifc`、`electrical.ifc`、`plumbing.ifc` は計測用に付けた名前です。
+
 ## 計測結果
 
 計測環境: Apple M5・16 GB、macOS 26.6.2、Python 3.12.13。
