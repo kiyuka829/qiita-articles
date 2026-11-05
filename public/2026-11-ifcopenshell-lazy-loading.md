@@ -5,8 +5,8 @@ tags:
   - IFC
   - IfcOpenShell
 private: false
-updated_at: ''
-id: null
+updated_at: '2026-11-05T22:06:35+09:00'
+id: 0d2ef739a0d34606a52f
 organization_url_name: null
 slide: false
 ignorePublish: false
