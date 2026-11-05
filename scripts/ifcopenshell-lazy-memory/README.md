@@ -1,24 +1,100 @@
-# IfcOpenShell 遅延読み込みのメモリ計測
+# IfcOpenShellの読み込み時間・メモリ計測
 
-`lazy=True` でIFCを開いたときのメモリ増加量を、インスタンス数などからの概算と比較するための記録です。対象ファイルごとに別プロセスで測定します。
+## 実行方法
 
-## 再計測
+uvを使用して、リポジトリのルートから実行します。`--with` でIfcOpenShellのバージョンを指定するため、事前のインストールは不要です。
+`--no-project` は、カレントディレクトリのプロジェクト依存関係を使わないための指定です。
+複数のIFCファイルを指定できます。各ファイル・各回を別プロセスで計測し、結果をJSON Lines形式で標準出力に出力します。
 
-IfcOpenShell 0.9.0の `lazy=True` が利用できるPython環境が必要です。macOSではRSS、physical footprint、圧縮またはスワップされた量を記録します。LinuxではRSSのみ取得します。
+### 読み込み時間・メモリ使用量の比較
 
-リポジトリのルートから、IFCファイルへのパスを指定します。複数指定すると、それぞれ別プロセスで開き、JSON Lines形式で標準出力に1行ずつ出力します。
+[measure_ifc_open.py](measure_ifc_open.py) で、`ifcopenshell.open()` の実行時間とメモリ増加量を計測します。
 
 ```sh
-python scripts/ifcopenshell-lazy-memory/measure_ifc_lazy_memory.py /path/to/model.ifc
+# IfcOpenShell 0.8.5
+uv run --no-project --with 'ifcopenshell==0.8.5' \
+  scripts/ifcopenshell-lazy-memory/measure_ifc_open.py \
+  --repeat 3 /path/to/model.ifc
+
+# IfcOpenShell 0.9.0（通常読み込み）
+uv run --no-project --with 'ifcopenshell==0.9.0' \
+  scripts/ifcopenshell-lazy-memory/measure_ifc_open.py \
+  --lazy false --repeat 3 /path/to/model.ifc
+
+# IfcOpenShell 0.9.0（lazy読み込み）
+uv run --no-project --with 'ifcopenshell==0.9.0' \
+  scripts/ifcopenshell-lazy-memory/measure_ifc_open.py \
+  --lazy true --repeat 3 /path/to/model.ifc
 ```
 
-RSSとfootprintはIfcOpenShellのimport後、openの直前・直後に取得します。件数を数える操作はその後に行います。実測値は各1回分で、プロセスやOSの状態の影響を受けます。
+- `--lazy`: `true` / `false` / `omit`（既定値）。`omit` は `open()` に `lazy` 引数を渡しません。
+- `--repeat`: 各ファイルの計測回数（既定値: 1）。
 
-概算には `144 × インスタンス数 + 12 × max(参照数, ファイルサイズ ÷ 32) + 64 × IfcRoot数` を用います。ファイルサイズの割り算は整数除算、係数は仮定に基づく値です。参照数はSTEP内の文字列・コメントを除く `#ID` の出現数からインスタンス宣言数を引いて求めます。IfcOpenShell内部の逆参照索引の件数とは照合していません。
+時間はimportを除いた `open()` の実時間、メモリはimport後のopen直前と直後の差分です。属性アクセスの時間・メモリは含みません。
+
+### lazy読み込みのメモリ概算との比較
+
+[measure_ifc_lazy_memory.py](measure_ifc_lazy_memory.py) はIfcOpenShell 0.9.0の `lazy=True` を使用します。
+
+```sh
+uv run --no-project --with 'ifcopenshell==0.9.0' \
+  scripts/ifcopenshell-lazy-memory/measure_ifc_lazy_memory.py /path/to/model.ifc
+```
+
+open前後のメモリ増加量を取得した後、インスタンス数・参照数・IfcRoot数を数え、次の概算値を出力します。
+
+```text
+概算（バイト）= 144 × インスタンス数 + 12 × max(参照数, ファイルサイズ ÷ 32) + 64 × IfcRoot数
+```
+
+ファイルサイズはバイト単位、割り算は整数除算です。
 
 ## 計測結果
 
-Apple M5・16 GB、macOS 26.6.2、Python 3.12.13、IfcOpenShell 0.9.0で計測しました。各ファイルは別プロセスで1回ずつ開き、すべて `lazy_loading()` が `True` であることを確認しています。
+計測環境: Apple M5・16 GB、macOS 26.6.2、Python 3.12.13。
+メモリの単位はMB（1 MB = 1,000,000バイト）です。メモリ増加量はopen前後の差分で、ピーク値ではありません。
+
+### 0.8.5 / 0.9.0の読み込み時間・メモリ使用量
+
+#### 読み込み時間
+
+単位は秒。3回の中央値、括弧内は最小〜最大です。
+
+| ファイル（サイズ） | 0.8.5 | 0.9.0 lazy=False | 0.9.0 lazy=True |
+| --- | ---: | ---: | ---: |
+| AC20-FZK-Haus.ifc (2.57 MB) | 0.059 (0.059〜0.070) | 0.024 (0.024〜0.029) | 0.008 (0.008〜0.008) |
+| kitchen.ifc (49.67 MB) | 1.184 (1.173〜1.206) | 0.480 (0.471〜0.913) | 0.144 (0.142〜0.145) |
+| electrical.ifc (97.06 MB) | 2.673 (2.663〜2.739) | 0.842 (0.840〜0.843) | 0.328 (0.325〜0.328) |
+| plumbing.ifc (222.10 MB) | 6.049 (5.782〜6.202) | 1.995 (1.960〜2.912) | 0.703 (0.702〜0.707) |
+| T1_UpTown_ArchiCAD.ifc (392.86 MB) | 11.292 (11.285〜11.394) | 3.821 (3.814〜3.895) | 1.363 (1.346〜1.394) |
+
+#### メモリ使用量
+
+各指標の3回の中央値です。
+
+physical footprintの増加量：
+
+| ファイル | 0.8.5 | 0.9.0 lazy=False | 0.9.0 lazy=True |
+| --- | ---: | ---: | ---: |
+| AC20-FZK-Haus.ifc | 24.28 | 16.48 | 10.52 |
+| kitchen.ifc | 471.12 | 269.96 | 172.28 |
+| electrical.ifc | 671.63 | 475.81 | 266.27 |
+| plumbing.ifc | 1,605.49 | 1,131.50 | 588.50 |
+| T1_UpTown_ArchiCAD.ifc | 3,075.69 | 2,060.13 | 1,060.14 |
+
+RSSの増加量：
+
+| ファイル | 0.8.5 | 0.9.0 lazy=False | 0.9.0 lazy=True |
+| --- | ---: | ---: | ---: |
+| AC20-FZK-Haus.ifc | 25.77 | 18.45 | 12.48 |
+| kitchen.ifc | 491.29 | 292.11 | 174.01 |
+| electrical.ifc | 793.94 | 501.76 | 267.98 |
+| plumbing.ifc | 1,548.70 | 1,161.05 | 590.04 |
+| T1_UpTown_ArchiCAD.ifc | 2,517.34 | 2,128.04 | 1,061.40 |
+
+### lazy読み込みのメモリ概算との比較
+
+IfcOpenShell 0.9.0の `lazy=True` で、各ファイルを1回ずつ計測した結果です。
 
 | ファイル | インスタンス数 | 参照数 | IfcRoot数 | 概算 MB | footprint増加 MB | RSS増加 MB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -28,20 +104,8 @@ Apple M5・16 GB、macOS 26.6.2、Python 3.12.13、IfcOpenShell 0.9.0で計測�
 | plumbing.ifc | 2,965,913 | 5,019,950 | 572,677 | 547.03 | 588.46 | 590.00 |
 | T1_UpTown_ArchiCAD.ifc | 5,399,942 | 8,075,801 | 1,076,305 | 993.80 | 1,060.05 | 1,061.31 |
 
-単位は10進（1 MB = 1,000,000バイト）です。各ファイルとも、open直後のプロセスの圧縮またはスワップは0 MBでした。`footprint` のSwapped列は圧縮とストレージへのスワップを区別しません。また、一時点の計測であり、open中のピークではありません。
+## RSSと圧縮・スワップについて
 
-なお、同日のUpTown単独の別計測では、open直後の圧縮またはスワップは24.10 MBでした。
+RSSは物理メモリに常駐している量のため、圧縮・スワップされたメモリを含む使用量をRSSだけで把握することはできません。今回も大きいファイルの計測で圧縮・スワップが発生したため、macOSのphysical footprintを併記しています。
 
-## 入力データ
-
-計測時のファイル名と入手元は次のとおりです。SHA-256は2026-11-04にローカルの入力ファイルから計算しました。サイズは10進バイトです。
-
-| 計測時のファイル名 | 入手元 | サイズ（バイト） | SHA-256 |
-| --- | --- | ---: | --- |
-| `AC20-FZK-Haus.ifc` | [KIT IFC Examples](https://www.ifcwiki.org/index.php?title=KIT_IFC_Examples) | 2,570,803 | `70cc8ff245fc0894201d96496c031005a5cbd7a96b22d8a1b87c5a883fb77994` |
-| `kitchen.ifc` | Sixty5設計モデルの `O-S1-BWK-BIM kitchens total - BIM keukens totaal.ifc` | 49,670,229 | `1905b992071729d1c780b18f6103e4d1d08307a4707d5f33a4413216f36776ac` |
-| `electrical.ifc` | Sixty5設計モデルの `O-S1-INS-E Installatie.ifc` | 97,058,912 | `adb8d5eda2c706a1fded2a00bd38d845e35f513e2f6ba048fc6228274dfb3986` |
-| `plumbing.ifc` | Sixty5設計モデルの `O-S1-INS-Plumbing - Sanitair.ifc` | 222,099,255 | `15382b06d0a63464b95ba451ce7d5fa981bf6c236ebe3f4f62bb9d2b9abfd821` |
-| `T1_UpTown_ArchiCAD.ifc` | [GeoBIM Benchmark 2019 Task 1](https://zenodo.org/records/3964368) | 392,855,677 | `d96624787b62b28a7a824f9bb6611082ef9bbf15d944bccc6e0ee3850771cfca` |
-
-Sixty5の3ファイルは [SDK - S1 の案内](https://github.com/buildingsmart-community/Community-Sample-Test-Files/tree/7ddf57a201f88a0c213d5322b02ed15e94a60a40/IFC%202.3.0.1%20%28IFC%202x3%29/SDK%20-%20S1) にある設計モデルのアーカイブから取得できます。`kitchen.ifc` などはローカルで付けた名前です。
+スクリプトはmacOSではRSS・physical footprint・圧縮またはスワップされた量を、LinuxではRSSを取得します。`footprint --swapped` のSwapped列は、メモリ圧縮とディスクへのスワップを区別しません。
