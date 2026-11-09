@@ -22,12 +22,17 @@ def footprint(pid):
     return int(match.group(1))
 
 
+def peak_rss_bytes():
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss if sys.platform == "darwin" else rss * 1024
+
+
 def worker(path, database, result, geometry):
     import ifcopenshell
     import ifcpatch
     from ifcpatch.recipes import Ifc2Sql
 
-    before = footprint(os.getpid())
+    before = footprint(os.getpid()) if sys.platform == "darwin" else None
     start = time.perf_counter()
     model = ifcopenshell.open(path, lazy=False)
     opened = time.perf_counter()
@@ -41,7 +46,7 @@ def worker(path, database, result, geometry):
         "open_seconds": opened - start, "conversion_seconds": end - opened,
         "total_seconds": end - start, "database_bytes": Path(database).stat().st_size,
         "baseline_footprint_bytes": before,
-        "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        "peak_rss_bytes": peak_rss_bytes(),
         "ifcopenshell_version": ifcopenshell.version, "ifcpatch_version": ifcpatch.version,
         "python_version": platform.python_version(), "platform": platform.platform(),
     }
@@ -59,8 +64,6 @@ def main():
     if args.worker:
         worker(args.input, str(args.output), args.result, not args.no_geometry)
         return
-    if sys.platform != "darwin":
-        parser.error("physical footprint monitoring requires macOS")
     if args.output.suffix.lower() not in (".sqlite", ".db", ".ifcsqlite"):
         parser.error("出力ファイルの拡張子は .sqlite、.db、.ifcsqlite のいずれかにしてください")
     if args.output.exists():
@@ -72,14 +75,18 @@ def main():
             command.append("--no-geometry")
         command += ["--", str(args.input), str(args.output)]
         process = subprocess.Popen(command, stdout=sys.stderr)
-        peak = 0
-        while process.poll() is None:
-            try:
-                peak = max(peak, footprint(process.pid))
-            except subprocess.CalledProcessError:
-                if process.poll() is None:
-                    raise
-            time.sleep(0.5)
+        peak = None
+        if sys.platform == "darwin":
+            peak = 0
+            while process.poll() is None:
+                try:
+                    peak = max(peak, footprint(process.pid))
+                except subprocess.CalledProcessError:
+                    if process.poll() is None:
+                        raise
+                time.sleep(0.5)
+        else:
+            process.wait()
         if process.returncode:
             print(json.dumps({"file": str(args.input.resolve()), "database": str(args.output), "geometry": not args.no_geometry, "returncode": process.returncode, "sampled_peak_footprint_bytes": peak}), flush=True)
             raise SystemExit(1)

@@ -67,11 +67,18 @@ def sample_database(path, size, seed):
 
 def memory():
     rss = int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(os.getpid())], text=True).strip()) * 1024
+    if sys.platform != "darwin":
+        return {"rss_bytes": rss, "footprint_bytes": None}
     output = subprocess.check_output(["footprint", "-f", "bytes", "--swapped", str(os.getpid())], text=True, stderr=subprocess.DEVNULL)
     match = re.search(r"^\s*phys_footprint:\s*(\d+) B", output, re.MULTILINE)
     if not match:
         raise ValueError("Could not parse physical footprint")
     return {"rss_bytes": rss, "footprint_bytes": int(match.group(1))}
+
+
+def peak_rss_bytes():
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss if sys.platform == "darwin" else rss * 1024
 
 
 def worker(args):
@@ -116,14 +123,18 @@ def worker(args):
     previous = baseline
     for name, snapshot in snapshots.items():
         for key in ("rss_bytes", "footprint_bytes"):
-            snapshot[key.replace('_bytes', '_delta_baseline_bytes')] = snapshot[key] - baseline[key]
-            snapshot[key.replace('_bytes', '_delta_previous_bytes')] = snapshot[key] - previous[key]
+            snapshot[key.replace('_bytes', '_delta_baseline_bytes')] = (
+                snapshot[key] - baseline[key] if snapshot[key] is not None and baseline[key] is not None else None
+            )
+            snapshot[key.replace('_bytes', '_delta_previous_bytes')] = (
+                snapshot[key] - previous[key] if snapshot[key] is not None and previous[key] is not None else None
+            )
         previous = snapshot
     result = {
         "mode": args.mode, "repetition": args.repetition,
         "open_seconds": opened - start, "read_seconds": read_end - start_read,
         "reread_seconds": reread_end - start_reread, "memory": snapshots,
-        "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        "peak_rss_bytes": peak_rss_bytes(),
         "ifcopenshell_version": ifcopenshell.version if args.mode != "sqlite-direct" else None,
         "lazy_requested": args.mode == "ifc-lazy" if args.mode.startswith("ifc-") else None,
         "lazy_active": model.lazy_loading() if args.mode.startswith("ifc-") else None,
@@ -150,8 +161,6 @@ def main():
         args.mode = args.mode[0]
         worker(args)
         return
-    if sys.platform != "darwin":
-        parser.error("physical footprint measurement requires macOS")
     if args.repeat < 1 or args.sample_size < 1:
         parser.error("--repeat and --sample-size must be positive")
     if len(set(args.mode)) != len(args.mode):
