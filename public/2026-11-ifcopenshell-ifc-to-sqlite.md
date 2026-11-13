@@ -136,9 +136,11 @@ CREATE TABLE IfcWall (
 );
 ```
 
-なお、`IfcWallStandardCase` などのサブタイプのインスタンスは、それぞれのクラスのテーブルに保存されます。SQLで `IfcWall` テーブルを読む場合と、IfcOpenShellの `by_type("IfcWall")` でサブタイプも含めて取得する場合は範囲が異なります。
+なお、`IfcWallStandardCase` などのサブタイプのインスタンスは、それぞれのクラスのテーブルに保存されます。SQLで `IfcWall` テーブルを読む場合と、IfcOpenShellの `by_type("IfcWall")` でサブタイプも含めて取得する場合とでは取得の範囲が異なります。
 
 ## 補助的なテーブル
+
+IFCクラスのテーブル以外にもいくつかテーブルが作られます。
 
 | テーブル | 内容 |
 | --- | --- |
@@ -177,17 +179,19 @@ CREATE TABLE psets (
 
 たとえば以下のようなデータ形式で保存されます。
 
-| ifc_id | pset_name | name | value |
-| --- | --- | --- | --- |
-| 15042 | AC_Pset_Name | Name | Wand-Int-ERDG-4 |
-| 15042 | Pset_WallCommon | ThermalTransmittance | 1.5 |
-| 17468 | Pset_DoorCommon | ThermalTransmittance | 2.0 |
-| 19199 | Pset_DoorCommon | FireExit | 0 |
-| 19199 | Pset_DoorCommon | ThermalTransmittance | 2.0 |
-| 23024 | Pset_WindowCommon | ThermalTransmittance | 1.4 |
+```md
+| ifc_id | pset_name         | name                 | value           |
+| ------ | ----------------- | -------------------- | --------------- |
+| 15042  | AC_Pset_Name      | Name                 | Wand-Int-ERDG-4 |
+| 15042  | Pset_WallCommon   | ThermalTransmittance | 1.5             |
+| 17468  | Pset_DoorCommon   | ThermalTransmittance | 2.0             |
+| 19199  | Pset_DoorCommon   | FireExit             | 0               |
+| 19199  | Pset_DoorCommon   | ThermalTransmittance | 2.0             |
+| 23024  | Pset_WindowCommon | ThermalTransmittance | 1.4             |
+```
 
 `value`は1.5などの数値でも文字列として保存されます。元の情報は以下のように `IfcPropertySingleValue` などのテーブルに保持されているので、そちらのテーブルを見ればデータ型も判別できます。
-なお、`psets.ifc_id` はプロパティを持つ要素のIDですが、以下の `ifc_id` はプロパティ自身のIDです。
+なお、`psets.ifc_id` はプロパティを持つ壁や窓などの要素のIDですが、以下の `ifc_id` はプロパティ自身のIDです。
 
 ```md
 | ifc_id | Name                 | Description | NominalValue                                               | Unit | inverses  |
@@ -219,8 +223,6 @@ print(wall.id(), wall.GlobalId, wall.Name)
 ただし、通常のIFCファイルと同じ操作がすべてできるわけではありません。`by_guid()` による取得や、`geom.create_shape()` によるメッシュ生成、IFC形式への書き出しには対応していません。
 `Name` などの属性の更新はできますが、元のIFCに保存し直す使い方はできないということですね。
 
-なお、変換時に保存したメッシュを取り出すための `get_geometry()` は用意されています。
-
 参考：[SQLite読み込みの実装（sql.py）](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcopenshell-python/ifcopenshell/sql.py)
 
 ## SQLで直接読む
@@ -251,7 +253,7 @@ IfcOpenShellを使用しないため、IFCのスキーマ情報などを元に�
 まずは変換にかかる時間と、変換後のファイルサイズを見てみます。`should_get_geometry` だけを切り替え、それ以外は既定値で変換しています。変換では全インスタンスの属性を読むため、`lazy=False` の通常読み込みを使用しました。
 変換時間は、IFCファイルの読み込みからSQLiteへの保存完了までの時間です。
 
-| ファイルサイズ | メッシュ | 変換時間 | SQLite | メモリ |
+| ファイルサイズ | メッシュ | 変換時間 | SQLite サイズ | メモリ |
 | ---: | --- | ---: | ---: | ---: |
 | 2.57 MB | なし | 0.58 秒 | 11.64 MB | 32.18 MB |
 | 2.57 MB | あり | 1.29 秒 | 12.55 MB | 276.22 MB |
@@ -281,7 +283,7 @@ IfcOpenShellを使用しないため、IFCのスキーマ情報などを元に�
 
 大きな差はありません。これはファイルを開くときにメッシュの読み込みなどの処理をしていないためですね。
 
-そういうわけなので、以降は、メッシュなしで変換したDBを使って計測します。
+そういうわけなので、以降はメッシュなしで変換したDBを使って計測します。
 
 ## ファイルを開く時間とメモリ使用量
 
@@ -329,7 +331,7 @@ IFCの遅延読み込みではC++側で索引を保持するのと同様に、SQ
 
 最後に、属性を読むときの時間も確認します。
 
-同じ1,000件のインスタンスをIDで取得し、`GlobalId` と `Name`を読む処理を2回行うことで初回参照と再参照の時間を計測しています。各セルは「初回 / 再参照」、単位はミリ秒です。ファイルを開く時間は含みません。直接SQLの場合も同じ1,000件を対象に、IDで指定して1件ずつ `GlobalId` と `Name` を取得しています。
+1,000件のインスタンスをIDで取得し、`GlobalId` と `Name`を読む処理を2回行うことで初回参照と再参照の時間を計測しています。各セルは「初回 / 再参照」、単位はミリ秒です。ファイルを開く時間は含みません。直接SQLの場合も同じ1,000件を対象に、IDで指定して1件ずつ `GlobalId` と `Name` を取得しています。
 
 | ファイルサイズ | IFC 遅延 | SQLite | 直接SQL（参考） |
 | ---: | ---: | ---: | ---: |
@@ -343,8 +345,6 @@ IfcOpenShell経由でSQLiteを読む場合は初回の参照に時間がかか�
 
 参考：[インスタンスのキャッシュ（sql.py）](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcopenshell-python/ifcopenshell/sql.py#L193)、[属性の取得とキャッシュ（sql.py）](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcopenshell-python/ifcopenshell/sql.py#L379)
 
-参考：[計測スクリプト・実行環境・使用したIFCファイル](https://github.com/kiyuka829/qiita-articles/tree/8d93214d96b5cb369093ed701bacb34a6e8868bf/scripts/ifcopenshell-sqlite)
-
 # まとめ
 
 そんなわけで、IfcOpenShellでIFCをSQLiteに変換して、DBの中身や読み込み時の挙動を調べてみました。
@@ -352,8 +352,7 @@ IfcOpenShell経由でSQLiteを読む場合は初回の参照に時間がかか�
 一度SQLiteに保存してしまえば、必要な情報だけDBから取ってくるから省メモリになっているのかなーとも思ったのですが、IfcOpenShell経由で読み込んだ場合は検索用のデータやキャッシュも保持するため、メモリ使用量はIFCの遅延読み込みの方が少ないという結果になりました。
 読み込み時間の短縮と省メモリ化が目的なら、`lazy=True` の方がよさそうです。
 
-ただ、SQLiteに変換すれば、IfcOpenShellを使わずにSQLで属性やプロパティを検索・集計できます。
-DBに入れれば全部解決！とはいきませんでしたが、用途によっては何かうまく使える気がしますね。
+ただ、SQLiteに変換すれば、IfcOpenShellを使わずにSQLで属性やプロパティを検索・集計できます。用途によっては何かうまく使える気がしますね。
 
 # 参考資料
 
