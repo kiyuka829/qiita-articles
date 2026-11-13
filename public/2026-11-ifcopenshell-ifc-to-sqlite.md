@@ -6,8 +6,8 @@ tags:
   - IfcOpenShell
   - SQLite
 private: false
-updated_at: ''
-id: null
+updated_at: '2026-11-13T23:36:28+09:00'
+id: 37c9ec8f4654ec462832
 organization_url_name: null
 slide: false
 ignorePublish: false
