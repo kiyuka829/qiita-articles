@@ -28,7 +28,7 @@ uv run --no-project --python 3.12 --with 'ifcopenshell==0.9.0.post1' \
   > read-results.json
 ```
 
-各方式で「ID取得のみ」「先頭1属性」「全属性」を別プロセスで各3回計測します。RocksDBは読み取り専用で開き、通常のモデルAPIを使います。
+各方式で「ID取得のみ」「先頭1属性」「全属性」を別プロセスで各3回計測します。RocksDBは読み取り専用で開き、IFCを開いた場合と共通のモデルAPI（`model.by_id()` など）を使います。
 
 全インスタンスから最大10万件を無作為抽出し（seed=42）、同じIDを1,000件・1万件・10万件と段階的に読みます。件数が少ないモデルは全件までです。最後に同じ対象をもう一度読みます。参照先の属性は再帰的にたどらず、取得結果を蓄積しません。
 
@@ -40,7 +40,7 @@ Apple M5・16 GB、macOS 26.6.2、Python 3.12.13、IfcOpenShell 0.9.0.post1。
 使用したIFCは [lazy読み込みの計測](../ifcopenshell-lazy-memory/README.md#使用したifcファイル) と同じ5ファイルです。
 
 - 数値は各条件3回の中央値、メモリ・容量はMB（1 MB = 1,000,000バイト）です。
-- 開く時間はimportを除いた `open()` の実時間です。属性参照時間は値の正規化・SHA-256・照合を含みます。
+- 開く時間はimportを除いた `open()` の実時間です。`measure_read.py` の属性参照時間は値の正規化・SHA-256・照合を含みます。
 - メモリはmacOSのphysical footprintを使います。基準値はimportと比較用データの読み込み後、モデルを開く前に取得します。
 - 各実行前に入力IFCとDBを順次読み、OSキャッシュを温めています。コールドキャッシュの測定ではありません。
 
@@ -110,8 +110,19 @@ Apple M5・16 GB、macOS 26.6.2、Python 3.12.13、IfcOpenShell 0.9.0.post1。
 
 ## 値の一致とメモリ指標
 
-変換15回・読み取り135回はすべて実行に成功しました。RocksDBの全属性参照で `UNKNOWN` が `False` になる差を確認しています。小さいモデルで4件、最大モデルの標本で3件あり、各3回の実行で再現しました。
+`measure_conversion.py` による変換15回・`measure_read.py` による読み取り135回はすべて実行に成功しました。RocksDBの全属性参照で `UNKNOWN` が `False` になる差を確認しています。AC20-FZK-Hausで4件、T1_UpTown_ArchiCADの標本で3件あり、各3回の実行で再現しました。
 
 スクリプトはRSS、圧縮・スワップ量、段階別の結果もJSONに出力します。最大モデルの変換では圧縮・スワップが発生したため、RSSだけではなくphysical footprintで比較しています。
 
 DB変換・取得値・保存構造の小規模検証には [verify_small.py](verify_small.py) を使います。入力の `AC20-FZK-Haus.ifc` は `IFC_FIXTURE` 環境変数で指定できます。
+
+## storage.by_id()との比較
+
+[measure_storage.py](measure_storage.py) で、同じRocksDBを読む `model.by_id()` と `model.storage.by_id()` を比較しました。5モデルすべてで `storage.by_id()` の方が遅く、メモリ増加量も多くなり、性能上のメリットは見られませんでした。
+
+以下は最大モデル（T1_UpTown_ArchiCAD）の10万インスタンスから全明示属性を取得した結果で、各3回の中央値です。参照先の属性はたどらず、返り値は蓄積しません。メモリは開いた直後から初回取得後までのphysical footprint増加量です。
+
+| 取得経路 | 初回 秒 | 再取得 秒 | メモリ増加 MB |
+| --- | ---: | ---: | ---: |
+| `model.by_id()` | 1.324 | 0.636 | 487.90 |
+| `model.storage.by_id()` | 2.137 | 0.743 | 525.55 |
