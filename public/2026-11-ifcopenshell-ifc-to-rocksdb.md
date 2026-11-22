@@ -1,5 +1,5 @@
 ---
-title: IfcOpenShellでIFCファイルをRocksDBに変換する
+title: IfcOpenShellでRocksDBを使う
 tags:
   - Python
   - IFC
