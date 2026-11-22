@@ -34,6 +34,20 @@ uv run --no-project --python 3.12 --with 'ifcopenshell==0.9.0.post1' \
 
 `--repeat` で回数、`--counts`・`--mode`・`--workloads` で読み取り条件を変更できます。実行失敗は非ゼロ終了します。値の不一致は `valid: false` として記録し、計測を継続します。
 
+### 大規模なメモリ推移
+
+[measure_memory_growth.py](measure_memory_growth.py) では、IFC lazyとRocksDBについて、選んだインスタンスの全属性を段階的に読み、開いた直後と各段階のメモリ使用量を記録します。
+
+```sh
+uv run --no-project --python 3.12 --with 'ifcopenshell==0.9.0.post1' \
+  python scripts/ifcopenshell-rocksdb/measure_memory_growth.py \
+  /path/to/model.ifc /path/to/model.rocksdb \
+  --counts 100000 300000 600000 1000000 2000000 3000000 \
+  > memory-growth.json
+```
+
+既定では最大300万件をseed 42で無作為抽出し、同じIDを両方式で各3回、別プロセスで読みます。モデルの全件数が指定より少なければ全件を対象とします。`--counts`、`--repeat`、`--seed` を変更できます。取得値は蓄積せず、検証や再参照は行いません。メモリはモデルを開く前・開いた直後・各段階の終了時に測定します。DBのブロックキャッシュ単体の使用量は測定しません。OSキャッシュは制御しません。
+
 ## 計測条件
 
 Apple M5・16 GB、macOS 26.6.2、Python 3.12.13、IfcOpenShell 0.9.0.post1。
