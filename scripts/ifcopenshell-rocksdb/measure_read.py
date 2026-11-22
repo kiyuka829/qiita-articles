@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure sampled IFC reads. Timings include per-entity hashing and validation."""
+"""Measure sampled IFC reads; validate values after the timed reads."""
 import argparse
 import hashlib
 import json
@@ -50,6 +50,16 @@ def entity_hash(model, entity_id, workload):
     return hashlib.sha256(json.dumps(values, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
 
 
+def read_entity(model, entity_id, workload):
+    entity = model.by_id(entity_id)
+    if entity is None:
+        raise ValueError(f'Missing entity #{entity_id}')
+    if workload != 'ids-only':
+        count = min(len(entity), 1) if workload == 'first-attribute' else len(entity)
+        for i in range(count):
+            entity[i]
+
+
 def prepare(a):
     import ifcopenshell
     model = ifcopenshell.open(a.ifc, lazy=True)
@@ -80,33 +90,29 @@ def worker(a):
     snapshots['after_open'] = memory()
     workload = a.workloads[0]
     stages = []
-    checksum = hashlib.sha256()
-    mismatches, examples, previous, cumulative_seconds = 0, [], 0, 0.0
+    previous, cumulative_seconds = 0, 0.0
     for count in counts:
         start = time.perf_counter()
         for index in range(previous, count):
-            actual = entity_hash(model, ids[index], workload)
-            checksum.update(bytes.fromhex(actual))
-            if actual != expected[index]:
-                mismatches += 1
-                if len(examples) < 10:
-                    examples.append({'id': ids[index], 'expected': expected[index], 'actual': actual})
+            read_entity(model, ids[index], workload)
         elapsed = time.perf_counter() - start
         cumulative_seconds += elapsed
         name = f'after_read_{count}'
         snapshots[name] = memory()
-        stages.append({'count': count, 'incremental_seconds': elapsed, 'cumulative_seconds': cumulative_seconds, 'checksum': checksum.hexdigest()})
+        stages.append({'count': count, 'incremental_seconds': elapsed, 'cumulative_seconds': cumulative_seconds})
         previous = count
     start = time.perf_counter()
-    reread = hashlib.sha256()
-    reread_mismatches = 0
-    for index, entity_id in enumerate(ids[:counts[-1]]):
-        actual = entity_hash(model, entity_id, workload)
-        reread.update(bytes.fromhex(actual))
-        if actual != expected[index]:
-            reread_mismatches += 1
+    for entity_id in ids[:counts[-1]]:
+        read_entity(model, entity_id, workload)
     reread_seconds = time.perf_counter() - start
     snapshots['after_reread'] = memory()
+    mismatches, examples = 0, []
+    for index, entity_id in enumerate(ids[:counts[-1]]):
+        actual = entity_hash(model, entity_id, workload)
+        if actual != expected[index]:
+            mismatches += 1
+            if len(examples) < 10:
+                examples.append({'id': entity_id, 'expected': expected[index], 'actual': actual})
     baseline = snapshots['baseline']
     previous_snapshot = baseline
     for snapshot in snapshots.values():
@@ -117,9 +123,9 @@ def worker(a):
         previous_snapshot = snapshot
     return {'mode': a.mode[0], 'workload': workload, 'repetition': a.repetition,
             'ifcopenshell_version': ifcopenshell.version, 'open_seconds': open_seconds,
-            'stages': stages, 'reread_seconds': reread_seconds, 'reread_checksum': reread.hexdigest(),
-            'mismatched_entity_count': mismatches, 'reread_mismatched_entity_count': reread_mismatches,
-            'mismatch_examples': examples, 'valid': mismatches == 0 and reread_mismatches == 0 and checksum.hexdigest() == reread.hexdigest(),
+            'stages': stages, 'reread_seconds': reread_seconds,
+            'mismatched_entity_count': mismatches,
+            'mismatch_examples': examples, 'valid': mismatches == 0,
             'memory': snapshots, 'peak_rss_bytes': peak_rss()}
 
 
@@ -168,7 +174,7 @@ def main():
             'database': str(a.database), 'database_bytes': size(a.database), 'seed': 42,
             'python_version': platform.python_version(), 'platform': platform.platform(),
             'warmup': 'sequentially read IFC and all regular database files before each worker; OS cache not controlled',
-            'timing': 'read and reread timings include canonicalization, SHA-256 and validation', 'runs': []}
+            'timing': 'by_id, len and positional attribute reads; validation runs after timed reads', 'runs': []}
     with tempfile.TemporaryDirectory(prefix='ifc-rocks-read-') as temp:
         manifest, result = Path(temp) / 'manifest.json', Path(temp) / 'result.json'
         common = [sys.executable, __file__, str(a.ifc), str(a.database), '--manifest', str(manifest), '--counts', *map(str, a.counts)]
