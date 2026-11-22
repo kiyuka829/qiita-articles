@@ -18,7 +18,7 @@ agreed_posting_campaign_term: false
 
 IfcOpenShellでIFCファイルをRocksDBに変換できるので、今回はその使い方と中身を調べるよ！
 
-というわけで前の記事では、[遅延読み込み](https://qiita.com/kiyuka/items/0d2ef739a0d34606a52f)だったり、[SQLiteへの変換](https://qiita.com/kiyuka/items/37c9ec8f4654ec462832)だったりの続き的なものだよ。
+というわけで前の記事で取り上げた[遅延読み込み](https://qiita.com/kiyuka/items/0d2ef739a0d34606a52f)や[SQLiteへの変換](https://qiita.com/kiyuka/items/37c9ec8f4654ec462832)の続き的なものだよ。
 
 なお、この記事では IfcOpenShell 0.9.0.post1 を使用しています。
 
@@ -268,9 +268,9 @@ v|00000000000086cd|000000000000032c|0000000000000004
 RocksDBのサイズは、どれもIFCファイルより小さくなりました。約393 MBのIFCでは、約253 MBになっています。変換時間については純粋にファイルサイズに比例していそうです。
 
 メモリ使用量は...なんか多いですね？以前計測した[遅延読み込み](https://qiita.com/kiyuka/items/0d2ef739a0d34606a52f)よりも多くなっています。単純に考えれば読み込んだデータは随時DBに保存すればいいのでメモリはここまで使用しないはずです。
-調べてみたところ、0.9.0post1ではインスタンスの情報をDB保存したあとに解放してないようでした。ただ、すでに修正されているようで、次の 0.9.1 のリリースで対応されるようです。そのため、メモリ使用量についてはそちらで改善されていると思われます。
+調べてみたところ、0.9.0.post1ではインスタンスの情報をDBを保存したあとに解放していないようでした。ただ、すでに修正されているようで、次の 0.9.1 のリリースで対応されるようです。そのため、メモリ使用量についてはそちらで改善されていると思われます。
 
-参考：[0.9.0post1のRocksDB変換処理](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/serializers/rocks_db_serializer.cpp#L101), [メモリ改善PR](https://github.com/IfcOpenShell/IfcOpenShell/pull/9863)
+参考：[0.9.0.post1のRocksDB変換処理](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/serializers/rocks_db_serializer.cpp#L101), [メモリ改善PR](https://github.com/IfcOpenShell/IfcOpenShell/pull/9863)
 
 ## 開く時間とメモリ使用量
 
@@ -324,8 +324,8 @@ RocksDBのサイズは、どれもIFCファイルより小さくなりました�
 
 ### 属性アクセスを増やしたときのメモリの増加傾向
 
-RocksDBでの属性アクセス時のメモリ増え過ぎでは？と思ったので調べてみたら[RocksDBのキャッシュの上限](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/file.cpp#L117)を1GBに設定しているようです。IfcOpenShell側のキャッシュに加えてRocksDBのキャッシュも増えるのでメモリが増えることになります。
-しかし、逆に言えばRocksDBが1GB使ったあとのメモリの増加量は減るはずです。確認してみましょう。
+RocksDBでの属性アクセス時のメモリ増え過ぎでは？と思ったので調べてみたら[RocksDBのブロックキャッシュの上限](https://github.com/IfcOpenShell/IfcOpenShell/blob/ifcopenshell-python-0.9.0post1/src/ifcparse/file.cpp#L117)を1GBに設定しているようです。IfcOpenShell側のキャッシュに加えてRocksDBのキャッシュも増えるのでメモリが増えることになります。
+しかし、逆に言えばRocksDBのブロックキャッシュが上限に近づけば、キャッシュによるメモリ増加は緩やかになるはずです。確認してみましょう。
 
 以下は一番大きい393MBのモデルで属性アクセス数を増やしていったときのメモリ増加量です。各列は「属性アクセスでの増加量 / 開いてからの合計 / 直前の行から10万件あたりの増加量」です。
 
@@ -338,11 +338,11 @@ RocksDBでの属性アクセス時のメモリ増え過ぎでは？と思った�
 | 200万件 | 319.0 / 1,331.4 / 15.9 MB | 1,180.6 / 1,191.9 / 16.7 MB |
 | 300万件 | 477.0 / 1,489.4 / 15.8 MB | 1,308.9 / 1,320.2 / 12.8 MB |
 
-列中の一番右の値が、アクセスごとのメモリ増加量です。lazyはおおよそ一定なのに対して、RocksDBは段々と少なくなっており、200万件以降はlazyと同等以下になっていることがわかります。
+列中の一番右の値が10万件あたりのメモリ増加量です。lazyはおおよそ一定なのに対して、RocksDBは段々と少なくなっており、200万件以降はlazyと同等以下になっていることがわかります。
 
 # まとめ
 
-そんなわけで、RocksDBに変換して速度とかメモリを計測しました。事前に変換をして置けるのであれば省メモリで使えそうな気がしますね。特に大きいモデルに対して部分的にアクセスすることが多いのであれば有用な気がします。ただ、属性アクセスは遅いようなので、そこはうまいこと使い分けるっていう感じでしょうか？
+そんなわけで、RocksDBに変換して速度とかメモリを計測しました。事前に変換しておけるのであれば省メモリで使えそうな気がしますね。特に大きいモデルに対して部分的にアクセスすることが多いのであれば有用な気がします。ただ、属性アクセスは遅いようなので、そこはうまいこと使い分けるっていう感じでしょうか？
 
 ## 参考
 
